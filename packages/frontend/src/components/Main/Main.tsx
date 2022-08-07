@@ -189,7 +189,7 @@ export const Main: React.FC = () => {
         } catch (e) {
           console.log("retry to fetch data");
         }
-      }, 5000);
+      }, 30000);
     })) as any;
 
     console.log(assetResponse.data);
