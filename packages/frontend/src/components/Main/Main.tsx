@@ -116,7 +116,9 @@ export const Main: React.FC = () => {
     const session = client.cast(stream, streamKey);
     setSesstion(session);
 
-    session.on("open", () => {
+    session.on("open", async () => {
+      console.log("wait 5 seconds for livepeer");
+      await delay(5000);
       setIsStreamingIsActive(true);
       setMode("create");
       console.log("Stream started.");
