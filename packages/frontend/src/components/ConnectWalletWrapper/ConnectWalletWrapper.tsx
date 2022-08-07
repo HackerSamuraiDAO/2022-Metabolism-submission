@@ -16,18 +16,18 @@ export const ConnectWalletWrapper: React.FC<ConnectWalletWrapperProps> = ({
   const { isWagmiConnected } = useIsWagmiConnected();
 
   return (
-    <Box>
+    <React.Fragment>
       {!isWagmiConnected && (
         <Box>
           <Button width="full" onClick={onOpen}>
             Connect Wallet
           </Button>
+          <Modal onClose={onClose} isOpen={isOpen}>
+            <ConnectWallet callback={onClose} />
+          </Modal>
         </Box>
       )}
-      {isWagmiConnected && <Box>{children}</Box>}
-      <Modal onClose={onClose} isOpen={isOpen}>
-        <ConnectWallet callback={onClose} />
-      </Modal>
-    </Box>
+      {isWagmiConnected && <React.Fragment>{children}</React.Fragment>}
+    </React.Fragment>
   );
 };
