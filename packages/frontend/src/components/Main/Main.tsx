@@ -3,7 +3,14 @@ import "videojs-contrib-quality-levels";
 import "videojs-hls-quality-selector";
 import "video.js/dist/video-js.min.css";
 
-import { Box, Button, Stack, useColorModeValue } from "@chakra-ui/react";
+import {
+  Box,
+  Button,
+  Link,
+  Stack,
+  Text,
+  useColorModeValue,
+} from "@chakra-ui/react";
 import { videonft } from "@livepeer/video-nft";
 import { Client, isSupported } from "@livepeer/webrtmp-sdk";
 import mumbaiZoraAddresses from "@zoralabs/v3/dist/addresses/80001.json";
@@ -23,16 +30,25 @@ import { ConnectWalletWrapper } from "../ConnectWalletWrapper";
 //TODO: make component for livepeer
 export const Main: React.FC = () => {
   const [mode, setMode] = React.useState<Mode>("select");
+  const [status, setStatus] = React.useState<
+    | "none"
+    | "waitForCreation"
+    | "createNFTMetadata"
+    | "mintNFT"
+    | "waitTxConfirm"
+    | "sellNFT"
+    | "complete"
+  >("none");
   const [isStreamingIsActive, setIsStreamingIsActive] = React.useState(false);
   const [videoElement, setVideoElelent] = React.useState(null);
 
   const [playbackId, setPlaybackId] = React.useState("");
-
-  const [assetIdList, setAssetIdList] = React.useState<string[]>([]);
-
   const { data: signer } = useSigner();
 
   const [session, setSesstion] = React.useState<any>();
+  const [player, setPlayer] = React.useState<any>();
+
+  const [hash, setHash] = React.useState("");
 
   React.useEffect(() => {
     if (!videoElement || !isStreamingIsActive || !playbackId) {
@@ -51,6 +67,7 @@ export const Main: React.FC = () => {
     player.on("error", () => {
       player.src(`https://livepeercdn.com/hls/${playbackId}/index.m3u8`);
     });
+    setPlayer(player);
   }, [videoElement, isStreamingIsActive, playbackId]);
 
   //TODO: better type
@@ -59,10 +76,11 @@ export const Main: React.FC = () => {
   }, []);
 
   const closeStreaming = () => {
-    if (!session) {
+    if (!player || !session) {
       return;
     }
     session.close();
+    player.dispose();
     setIsStreamingIsActive(false);
   };
 
@@ -80,6 +98,7 @@ export const Main: React.FC = () => {
       audio: true,
     });
 
+    console.log("create stream");
     const { data } = await axios.post(
       "api/stream",
       {},
@@ -92,18 +111,21 @@ export const Main: React.FC = () => {
     );
 
     const { streamKey, playbackId } = data;
+    console.log(data);
     setPlaybackId(playbackId);
-
     const client = new Client();
     const session = client.cast(stream, streamKey);
     setSesstion(session);
     session.on("open", () => {
       setIsStreamingIsActive(true);
+      setMode("create");
       console.log("Stream started.");
     });
-    session.on("close", () => {
-      closeStreaming();
+    session.on("close", async () => {
       console.log("Stream stopped.");
+      setMode("mint");
+      closeStreaming();
+      await mintNFT();
     });
     session.on("error", (err) => {
       console.log("Stream error.", err.message);
@@ -122,22 +144,54 @@ export const Main: React.FC = () => {
     const assetIdList = Object.values(assetsResponse.data).map((asset: any) => {
       return asset.id as string;
     });
-    setAssetIdList(assetIdList);
+    return assetIdList;
   };
 
-  const mintNFT = async (assetId: string) => {
+  const mintNFT = async () => {
+    setStatus("none");
     if (!signer) {
       return;
     }
 
     console.log("--- livepeer process ---");
-    console.log("fetching asset information...");
-    const assetResponse = await axios.get(`api/asset/${assetId}`, {
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${API_KEY_BACKEND}`,
-      },
+    console.log("waiting streaming record creation...");
+    setStatus("waitForCreation");
+    const initialAssets = await getAssets();
+    const createdAssetId = await new Promise((resolve) => {
+      const interval = setInterval(async () => {
+        const currentAsset = await getAssets();
+        if (currentAsset.length > initialAssets.length) {
+          clearInterval(interval);
+          resolve(currentAsset[0]);
+        }
+      }, 10000);
     });
+
+    console.log("record created:", createdAssetId);
+    setStatus("createNFTMetadata");
+
+    const assetResponse = (await new Promise((resolve) => {
+      const interval = setInterval(async () => {
+        try {
+          const assetResponseTemp = await axios.get(
+            `api/asset/${createdAssetId}`,
+            {
+              headers: {
+                "content-type": "application/json",
+                authorization: `Bearer ${API_KEY_BACKEND}`,
+              },
+            }
+          );
+          if (assetResponseTemp) {
+            clearInterval(interval);
+            resolve(assetResponseTemp);
+          }
+        } catch (e) {
+          console.log("retry to fetch data");
+        }
+      }, 5000);
+    })) as any;
+
     console.log(assetResponse.data);
     const apiOpts = {
       auth: { apiKey: API_KEY_FRONTEND },
@@ -148,7 +202,9 @@ export const Main: React.FC = () => {
       ethereum: window.ethereum as any,
       chainId: 80001,
     });
+    console.log("normalize asset for nft...");
     const asset = await minter.api.nftNormalize(assetResponse.data);
+    console.log(asset);
     const nftMetadata = {
       description: "My NFT description",
       traits: { "my-custom-trait": "my-custom-value" },
@@ -156,19 +212,23 @@ export const Main: React.FC = () => {
     console.log("uploading to ipfs...");
     const ipfs = await minter.api.exportToIPFS(asset.id, nftMetadata);
     console.log(ipfs);
+    setStatus("mintNFT");
     console.log("minting nft...");
     const tx = await minter.web3.mintNft(ipfs.nftMetadataUrl);
     console.log(tx);
+    setStatus("waitTxConfirm");
     console.log("waiting tx confirmation...");
+
     await tx.wait();
     console.log("tx confirmed");
+    setStatus("sellNFT");
     const nftInfo = await minter.web3.getMintedNftInfo(tx);
     console.log(
       `minted NFT on contract ${nftInfo.contractAddress} with ID ${nftInfo.tokenId}`
     );
-
     console.log("--- zora v3 process ---");
     console.log("create order...");
+
     const askModuleContract = AsksV1_1__factory.connect(
       mumbaiZoraAddresses.AsksV1_1,
       signer
@@ -222,7 +282,7 @@ export const Main: React.FC = () => {
     }
 
     console.log("create ask...");
-    await askModuleContract.createAsk(
+    const result = await askModuleContract.createAsk(
       contractAddress,
       tokenId,
       askPrice,
@@ -230,6 +290,9 @@ export const Main: React.FC = () => {
       ownerAddress,
       findersFeeBps
     );
+    setStatus("complete");
+    setHash(result.hash);
+    console.log(result);
   };
 
   return (
@@ -245,26 +308,10 @@ export const Main: React.FC = () => {
             <Button
               w="full"
               onClick={() => {
-                setMode("create");
+                startStreaming();
               }}
             >
               Create Streaming
-            </Button>
-            <Button
-              w="full"
-              onClick={() => {
-                setMode("manage");
-              }}
-            >
-              Manage Streaming
-            </Button>
-            <Button
-              w="full"
-              onClick={() => {
-                setMode("view");
-              }}
-            >
-              View Streaming
             </Button>
           </Stack>
         )}
@@ -279,7 +326,7 @@ export const Main: React.FC = () => {
                         <video
                           id="video"
                           ref={onVideo}
-                          className="video-js vjs-fluid "
+                          className="video-js vjs-fluid"
                           controls
                           playsInline
                         />
@@ -290,37 +337,67 @@ export const Main: React.FC = () => {
                     </Button>
                   </>
                 )}
-
-                {!isStreamingIsActive && (
-                  <Button w="full" onClick={startStreaming}>
-                    Start
-                  </Button>
-                )}
               </Stack>
             </ConnectWalletWrapper>
           </Stack>
         )}
-        {mode == "manage" && (
-          <Stack spacing="4">
-            <Button w="full" onClick={getAssets}>
-              Get Assets
-            </Button>
-            {assetIdList.map((assetId) => {
-              return (
-                <Button
-                  fontSize={"xs"}
-                  key={assetId}
-                  onClick={() => mintNFT(assetId)}
-                >
-                  {assetId}
-                </Button>
-              );
-            })}
-          </Stack>
-        )}
-        {mode == "view" && (
-          <Stack spacing="4">
-            <Button w="full">View</Button>
+        {mode == "mint" && (
+          <Stack padding={"4"}>
+            <Text align={"center"} fontWeight="bold" fontSize={"xl"} mb="8">
+              Arctic Arcive
+            </Text>
+            {status === "waitForCreation" && (
+              <>
+                <Text fontWeight="bold">Creating Streaming Record</Text>
+                <Text fontSize={"xs"}>
+                  This is using Livepeer. It will take some time.
+                </Text>
+              </>
+            )}
+            {status === "createNFTMetadata" && (
+              <>
+                <Text fontWeight="bold">Creating NFT Metadata</Text>
+                <Text fontSize={"xs"}>
+                  This is using IPFS. It will take some time.
+                </Text>
+              </>
+            )}
+            {status === "mintNFT" && (
+              <>
+                <Text fontWeight="bold">Minting Arctic Live Video NFT</Text>
+                <Text fontSize={"xs"}>
+                  This is using Metamask and Livepeer. Please confirm tx.
+                </Text>
+              </>
+            )}
+            {status === "waitTxConfirm" && (
+              <>
+                <Text fontWeight="bold">Waiting Tx Confirmation</Text>
+                <Text fontSize={"xs"}>
+                  This is in Polygon Mumbai. It will take some time.
+                </Text>
+              </>
+            )}
+            {status === "sellNFT" && (
+              <>
+                <Text fontWeight="bold">Finding Supporter</Text>
+                <Text fontSize={"xs"}>
+                  This is using Metamask and Zora V3. Please confirm tx.
+                </Text>
+              </>
+            )}
+            {status === "complete" && (
+              <>
+                <Text fontWeight="bold">Completed</Text>
+                <Text fontSize={"xs"}>
+                  Congratulation! Your live video is archived in NFT and looking
+                  for supporter!{" "}
+                  <Link href={`https://mumbai.polygonscan.com/tx/${hash}`}>
+                    Check Zora V3 Tx
+                  </Link>
+                </Text>
+              </>
+            )}
           </Stack>
         )}
       </Box>

@@ -1,1 +1,1 @@
-export type Mode = "select" | "create" | "manage" | "view";
+export type Mode = "select" | "create" | "mint";
