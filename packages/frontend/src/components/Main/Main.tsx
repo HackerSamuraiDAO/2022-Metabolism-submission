@@ -6,10 +6,15 @@ import "video.js/dist/video-js.min.css";
 import {
   Box,
   Button,
+  Center,
+  Image,
   Link,
+  Modal,
+  ModalOverlay,
   Stack,
   Text,
   useColorModeValue,
+  useDisclosure,
 } from "@chakra-ui/react";
 import { videonft } from "@livepeer/video-nft";
 import { Client, isSupported } from "@livepeer/webrtmp-sdk";
@@ -52,6 +57,8 @@ export const Main: React.FC = () => {
 
   const [hash, setHash] = React.useState("");
 
+  const { isOpen, onClose, onOpen } = useDisclosure();
+
   React.useEffect(() => {
     if (!videoElement || !isStreamingIsActive || !playbackId) {
       return;
@@ -91,6 +98,7 @@ export const Main: React.FC = () => {
     if (!isSupported()) {
       alert("webrtmp-sdk is not currently supported on this browser");
     }
+    onOpen();
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: true,
@@ -117,16 +125,17 @@ export const Main: React.FC = () => {
     setSesstion(session);
 
     session.on("open", async () => {
-      console.log("wait 5 seconds for livepeer");
-      await delay(5000);
+      console.log("wait some seconds until livepeer prepared");
+      await delay(7500);
       setIsStreamingIsActive(true);
       setMode("create");
+      onClose();
       console.log("Stream started.");
     });
     session.on("close", async () => {
       console.log("Stream stopped.");
-      setMode("mint");
       closeStreaming();
+      setMode("mint");
       await mintNFT();
     });
     session.on("error", (err) => {
@@ -174,6 +183,7 @@ export const Main: React.FC = () => {
     console.log("record created:", createdAssetId);
     setStatus("createNFTMetadata");
 
+    console.log("fetch record information...");
     const assetResponse = (await new Promise((resolve) => {
       const interval = setInterval(async () => {
         try {
@@ -214,7 +224,21 @@ export const Main: React.FC = () => {
       traits: { "my-custom-trait": "my-custom-value" },
     };
     console.log("uploading to ipfs...");
-    const ipfs = await minter.api.exportToIPFS(asset.id, nftMetadata);
+    const ipfs = (await new Promise((resolve) => {
+      const interval = setInterval(async () => {
+        try {
+          const assetResponseTemp = await minter.api.exportToIPFS(
+            asset.id,
+            nftMetadata
+          );
+          clearInterval(interval);
+          resolve(assetResponseTemp);
+        } catch (e) {
+          console.log("retry to upload ipfs...");
+        }
+      }, 5000);
+    })) as any;
+
     console.log(ipfs);
     setStatus("mintNFT");
     console.log("minting nft...");
@@ -306,9 +330,22 @@ export const Main: React.FC = () => {
       px="4"
       py="8"
     >
+      <Modal isOpen={isOpen} onClose={() => {}} isCentered>
+        <ModalOverlay />
+      </Modal>
       <Box>
         {mode === "select" && (
           <Stack spacing="4">
+            <Text align={"center"} fontWeight="bold" fontSize={"xl"}>
+              Instruction
+            </Text>
+            <Text align={"center"} fontSize="xs">
+              Connect Polygon Mumbai to mint archived live NFT and open dev
+              consol to get logs.
+            </Text>
+            <Center>
+              <Image w="48" align={"center"} src="/video.png" alt="video" />
+            </Center>
             <Button
               w="full"
               onClick={() => {
@@ -357,6 +394,14 @@ export const Main: React.FC = () => {
                   <Text align={"center"} fontSize={"sm"}>
                     This is using Livepeer. It will take some time.
                   </Text>
+                  <Center>
+                    <Image
+                      w="48"
+                      align={"center"}
+                      src="/enjoy.png"
+                      alt="video"
+                    />
+                  </Center>
                 </>
               )}
               {status === "createNFTMetadata" && (
@@ -367,6 +412,14 @@ export const Main: React.FC = () => {
                   <Text align={"center"} fontSize={"sm"}>
                     This is using IPFS. It will take some time.
                   </Text>
+                  <Center>
+                    <Image
+                      w="48"
+                      align={"center"}
+                      src="/save.png"
+                      alt="video"
+                    />
+                  </Center>
                 </>
               )}
               {status === "mintNFT" && (
@@ -377,6 +430,9 @@ export const Main: React.FC = () => {
                   <Text align={"center"} fontSize={"sm"}>
                     This is using Metamask and Livepeer. Please confirm tx.
                   </Text>
+                  <Center>
+                    <Image w="48" align={"center"} src="/art.png" alt="video" />
+                  </Center>
                 </>
               )}
               {status === "waitTxConfirm" && (
@@ -387,6 +443,14 @@ export const Main: React.FC = () => {
                   <Text align={"center"} fontSize={"sm"}>
                     This is in Polygon Mumbai. It will take some time.
                   </Text>
+                  <Center>
+                    <Image
+                      w="48"
+                      align={"center"}
+                      src="/wait.png"
+                      alt="video"
+                    />
+                  </Center>
                 </>
               )}
               {status === "sellNFT" && (
@@ -397,6 +461,14 @@ export const Main: React.FC = () => {
                   <Text align={"center"} fontSize={"sm"}>
                     This is using Metamask and Zora V3. Please confirm tx.
                   </Text>
+                  <Center>
+                    <Image
+                      w="48"
+                      align={"center"}
+                      src="/shop.png"
+                      alt="video"
+                    />
+                  </Center>
                 </>
               )}
               {status === "complete" && (
@@ -411,6 +483,14 @@ export const Main: React.FC = () => {
                       Check Zora V3 Tx
                     </Link>
                   </Text>
+                  <Center>
+                    <Image
+                      w="48"
+                      align={"center"}
+                      src="/done.png"
+                      alt="video"
+                    />
+                  </Center>
                 </>
               )}
             </ConnectWalletWrapper>
