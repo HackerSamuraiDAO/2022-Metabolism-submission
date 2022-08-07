@@ -3,18 +3,28 @@ import "videojs-contrib-quality-levels";
 import "videojs-hls-quality-selector";
 import "video.js/dist/video-js.min.css";
 
-import { Box, Button, Stack, useColorModeValue } from "@chakra-ui/react";
+import {
+  Box,
+  Button,
+  FormControl,
+  FormLabel,
+  IconButton,
+  Input,
+  Modal,
+  ModalContent,
+  ModalOverlay,
+  Stack,
+  useColorModeValue,
+  useDisclosure,
+} from "@chakra-ui/react";
 import { Client, isSupported } from "@livepeer/webrtmp-sdk";
+import axios from "axios";
 import React from "react";
 import videojs from "video.js";
 
 import { Mode } from "../../types/livepeer";
 import { ConnectWalletWrapper } from "../ConnectWalletWrapper";
-
-//TODO: use generated one
-const API_KEY = "";
-const STREAM_KEY = "";
-const PLAYBACK_ID = "";
+import { icons } from "./data";
 
 //TODO: make component for livepeer
 export const Main: React.FC = () => {
@@ -22,13 +32,13 @@ export const Main: React.FC = () => {
   const [isStreamingIsActive, setIsStreamingIsActive] = React.useState(false);
   const [videoElement, setVideoElelent] = React.useState(null);
 
-  //TODO: better type
-  const onVideo = React.useCallback((element: any) => {
-    setVideoElelent(element);
-  }, []);
+  const { isOpen, onOpen, onClose } = useDisclosure();
+
+  const [playbackId, setPlaybackId] = React.useState("");
+  const [apiKey, setAPIKey] = React.useState("");
 
   React.useEffect(() => {
-    if (!videoElement || !isStreamingIsActive) {
+    if (!videoElement || !isStreamingIsActive || !playbackId) {
       return;
     }
     const player = videojs(videoElement, {
@@ -36,16 +46,35 @@ export const Main: React.FC = () => {
       controls: true,
       sources: [
         {
-          src: `https://cdn.livepeer.com/hls/${PLAYBACK_ID}/index.m3u8`,
+          src: `https://cdn.livepeer.com/hls/${playbackId}/index.m3u8`,
         },
       ],
     });
     // TODO: enable it
     // player.hlsQualitySelector();
     player.on("error", () => {
-      player.src(`https://cdn.livepeer.com/hls/${PLAYBACK_ID}/index.m3u8`);
+      player.src(`https://cdn.livepeer.com/hls/${playbackId}/index.m3u8`);
     });
-  }, [videoElement, isStreamingIsActive]);
+  }, [videoElement, isStreamingIsActive, playbackId]);
+
+  //TODO: better type
+  const onVideo = React.useCallback((element: any) => {
+    setVideoElelent(element);
+  }, []);
+
+  const handleAPIKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setAPIKey(e.target.value);
+  };
+
+  const openStreamingModal = () => {
+    setIsStreamingIsActive(true);
+    onOpen();
+  };
+
+  const closeStreamingModal = () => {
+    setIsStreamingIsActive(false);
+    onClose();
+  };
 
   const startStreaming = async () => {
     if (!isSupported()) {
@@ -57,14 +86,29 @@ export const Main: React.FC = () => {
       audio: true,
     });
 
+    const { data } = await axios.post(
+      "api/stream",
+      {},
+      {
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${apiKey}`,
+        },
+      }
+    );
+
+    const { streamKey, playbackId } = data;
+    setPlaybackId(playbackId);
+
     const client = new Client();
-    const session = client.cast(stream, STREAM_KEY);
+    const session = client.cast(stream, streamKey);
+
     session.on("open", () => {
-      setIsStreamingIsActive(true);
+      openStreamingModal();
       console.log("Stream started.");
     });
     session.on("close", () => {
-      setIsStreamingIsActive(false);
+      closeStreamingModal();
       console.log("Stream stopped.");
     });
     session.on("error", (err) => {
@@ -104,16 +148,41 @@ export const Main: React.FC = () => {
           <Stack>
             <ConnectWalletWrapper>
               <Stack>
+                {!isStreamingIsActive && (
+                  <FormControl>
+                    <FormLabel>Livepeer API Key</FormLabel>
+                    <Input type="text" onChange={handleAPIKeyChange} />
+                  </FormControl>
+                )}
+
                 {isStreamingIsActive && (
-                  <div data-vjs-player>
-                    <video
-                      id="video"
-                      ref={onVideo}
-                      className="h-full w-full video-js vjs-fluid vjs-16-9 vjs-theme-city"
-                      controls
-                      playsInline
-                    />
-                  </div>
+                  <Modal onClose={closeStreamingModal} isOpen={isOpen}>
+                    <ModalOverlay />
+                    <ModalContent position="relative">
+                      <div data-vjs-player>
+                        <video
+                          id="video"
+                          ref={onVideo}
+                          className="video-js vjs-fluid "
+                          controls
+                          playsInline
+                        />
+                      </div>
+                      <Box position="absolute" right="2" top="2">
+                        {icons.map((icon) => (
+                          <IconButton
+                            size="xs"
+                            key={icon.key}
+                            as="a"
+                            href={icon.href}
+                            target="_blank"
+                            aria-label={icon.key}
+                            icon={icon.icon}
+                          />
+                        ))}
+                      </Box>
+                    </ModalContent>
+                  </Modal>
                 )}
                 <Button w="full" onClick={startStreaming}>
                   Start
