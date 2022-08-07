@@ -27,6 +27,8 @@ import { API_KEY_BACKEND, API_KEY_FRONTEND } from "../../lib/app/constants";
 import { Mode } from "../../types/livepeer";
 import { ConnectWalletWrapper } from "../ConnectWalletWrapper";
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 //TODO: make component for livepeer
 export const Main: React.FC = () => {
   const [mode, setMode] = React.useState<Mode>("select");
@@ -90,10 +92,6 @@ export const Main: React.FC = () => {
       alert("webrtmp-sdk is not currently supported on this browser");
     }
 
-    if (!signer) {
-      return;
-    }
-
     const stream = await navigator.mediaDevices.getUserMedia({
       video: true,
       audio: true,
@@ -117,6 +115,7 @@ export const Main: React.FC = () => {
     const client = new Client();
     const session = client.cast(stream, streamKey);
     setSesstion(session);
+
     session.on("open", () => {
       setIsStreamingIsActive(true);
       setMode("create");
@@ -157,15 +156,17 @@ export const Main: React.FC = () => {
     console.log("--- livepeer process ---");
     console.log("waiting streaming record creation...");
     setStatus("waitForCreation");
-    const initialAssets = await getAssets();
+    // const initialAssets = await getAssets();
     const createdAssetId = await new Promise((resolve) => {
       const interval = setInterval(async () => {
+        console.log("waiting...");
         const currentAsset = await getAssets();
-        if (currentAsset.length > initialAssets.length) {
-          clearInterval(interval);
-          resolve(currentAsset[0]);
-        }
-      }, 10000);
+        // TODO: for demo we use last created record, remove this, because it is too slow, but I checked this is working fine in dev
+        // if (currentAsset.length > initialAssets.length) {
+        clearInterval(interval);
+        resolve(currentAsset[0]);
+        // }
+      }, 5000);
     });
 
     console.log("record created:", createdAssetId);
@@ -190,7 +191,7 @@ export const Main: React.FC = () => {
         } catch (e) {
           console.log("retry to fetch data");
         }
-      }, 30000);
+      }, 5000);
     })) as any;
 
     console.log(assetResponse.data);
@@ -312,93 +313,105 @@ export const Main: React.FC = () => {
                 startStreaming();
               }}
             >
-              Create Streaming
+              Create Streaming 🎥
             </Button>
           </Stack>
         )}
         {mode == "create" && (
           <Stack spacing="4">
-            <ConnectWalletWrapper>
-              <Stack spacing="4">
-                {isStreamingIsActive && (
-                  <>
-                    <Box>
-                      <div data-vjs-player>
-                        <video
-                          id="video"
-                          ref={onVideo}
-                          className="video-js vjs-fluid"
-                          controls
-                          playsInline
-                        />
-                      </div>
-                    </Box>
-                    <Button w="full" onClick={closeStreaming}>
-                      End
-                    </Button>
-                  </>
-                )}
-              </Stack>
-            </ConnectWalletWrapper>
+            <Stack spacing="4">
+              {isStreamingIsActive && (
+                <>
+                  <Box>
+                    <div data-vjs-player>
+                      <video
+                        id="video"
+                        ref={onVideo}
+                        className="video-js vjs-fluid"
+                        controls
+                        playsInline
+                      />
+                    </div>
+                  </Box>
+                  <Button w="full" onClick={closeStreaming}>
+                    End
+                  </Button>
+                </>
+              )}
+            </Stack>
           </Stack>
         )}
         {mode == "mint" && (
-          <Stack padding={"4"}>
-            <Text align={"center"} fontWeight="bold" fontSize={"xl"} mb="8">
-              Arctic Arcive
+          <Stack>
+            <Text align={"center"} fontWeight="bold" fontSize={"xl"} mb="4">
+              Arctic Arcive 🏔
             </Text>
-            {status === "waitForCreation" && (
-              <>
-                <Text fontWeight="bold">Creating Streaming Record</Text>
-                <Text fontSize={"xs"}>
-                  This is using Livepeer. It will take some time.
-                </Text>
-              </>
-            )}
-            {status === "createNFTMetadata" && (
-              <>
-                <Text fontWeight="bold">Creating NFT Metadata</Text>
-                <Text fontSize={"xs"}>
-                  This is using IPFS. It will take some time.
-                </Text>
-              </>
-            )}
-            {status === "mintNFT" && (
-              <>
-                <Text fontWeight="bold">Minting Arctic Live Video NFT</Text>
-                <Text fontSize={"xs"}>
-                  This is using Metamask and Livepeer. Please confirm tx.
-                </Text>
-              </>
-            )}
-            {status === "waitTxConfirm" && (
-              <>
-                <Text fontWeight="bold">Waiting Tx Confirmation</Text>
-                <Text fontSize={"xs"}>
-                  This is in Polygon Mumbai. It will take some time.
-                </Text>
-              </>
-            )}
-            {status === "sellNFT" && (
-              <>
-                <Text fontWeight="bold">Finding Supporter</Text>
-                <Text fontSize={"xs"}>
-                  This is using Metamask and Zora V3. Please confirm tx.
-                </Text>
-              </>
-            )}
-            {status === "complete" && (
-              <>
-                <Text fontWeight="bold">Completed</Text>
-                <Text fontSize={"xs"}>
-                  Congratulation! Your live video is archived in NFT and looking
-                  for supporter!{" "}
-                  <Link href={`https://mumbai.polygonscan.com/tx/${hash}`}>
-                    Check Zora V3 Tx
-                  </Link>
-                </Text>
-              </>
-            )}
+            <ConnectWalletWrapper>
+              {status === "waitForCreation" && (
+                <>
+                  <Text align={"center"} fontWeight="bold">
+                    Creating Streaming Record
+                  </Text>
+                  <Text align={"center"} fontSize={"sm"}>
+                    This is using Livepeer. It will take some time.
+                  </Text>
+                </>
+              )}
+              {status === "createNFTMetadata" && (
+                <>
+                  <Text align={"center"} fontWeight="bold">
+                    Creating NFT Metadata
+                  </Text>
+                  <Text align={"center"} fontSize={"sm"}>
+                    This is using IPFS. It will take some time.
+                  </Text>
+                </>
+              )}
+              {status === "mintNFT" && (
+                <>
+                  <Text align={"center"} fontWeight="bold">
+                    Minting Arctic Live Video NFT
+                  </Text>
+                  <Text align={"center"} fontSize={"sm"}>
+                    This is using Metamask and Livepeer. Please confirm tx.
+                  </Text>
+                </>
+              )}
+              {status === "waitTxConfirm" && (
+                <>
+                  <Text align={"center"} fontWeight="bold">
+                    Waiting Tx Confirmation
+                  </Text>
+                  <Text align={"center"} fontSize={"sm"}>
+                    This is in Polygon Mumbai. It will take some time.
+                  </Text>
+                </>
+              )}
+              {status === "sellNFT" && (
+                <>
+                  <Text align={"center"} fontWeight="bold">
+                    Finding Supporter
+                  </Text>
+                  <Text align={"center"} fontSize={"sm"}>
+                    This is using Metamask and Zora V3. Please confirm tx.
+                  </Text>
+                </>
+              )}
+              {status === "complete" && (
+                <>
+                  <Text align={"center"} fontWeight="bold">
+                    Completed
+                  </Text>
+                  <Text align={"center"} fontSize={"sm"}>
+                    Congratulation! Your live video is archived in NFT and
+                    looking for supporter!{" "}
+                    <Link href={`https://mumbai.polygonscan.com/tx/${hash}`}>
+                      Check Zora V3 Tx
+                    </Link>
+                  </Text>
+                </>
+              )}
+            </ConnectWalletWrapper>
           </Stack>
         )}
       </Box>
