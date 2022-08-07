@@ -3,19 +3,15 @@ import "videojs-contrib-quality-levels";
 import "videojs-hls-quality-selector";
 import "video.js/dist/video-js.min.css";
 
-import {
-  Box,
-  Button,
-  FormControl,
-  FormLabel,
-  Input,
-  Stack,
-  useColorModeValue,
-  useDisclosure,
-} from "@chakra-ui/react";
+import { Box, Button, Stack, useColorModeValue } from "@chakra-ui/react";
 import { videonft } from "@livepeer/video-nft";
 import { Client, isSupported } from "@livepeer/webrtmp-sdk";
+import mumbaiZoraAddresses from "@zoralabs/v3/dist/addresses/80001.json";
+import { AsksV1_1__factory } from "@zoralabs/v3/dist/typechain/factories/AsksV1_1__factory";
+import { IERC721__factory } from "@zoralabs/v3/dist/typechain/factories/IERC721__factory";
+import { ZoraModuleManager__factory } from "@zoralabs/v3/dist/typechain/factories/ZoraModuleManager__factory";
 import axios from "axios";
+import { ethers } from "ethers";
 import React from "react";
 import videojs from "video.js";
 import { useSigner } from "wagmi";
@@ -130,13 +126,19 @@ export const Main: React.FC = () => {
   };
 
   const mintNFT = async (assetId: string) => {
+    if (!signer) {
+      return;
+    }
+
+    console.log("--- livepeer process ---");
+    console.log("fetching asset information...");
     const assetResponse = await axios.get(`api/asset/${assetId}`, {
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${API_KEY_BACKEND}`,
       },
     });
-
+    console.log(assetResponse.data);
     const apiOpts = {
       auth: { apiKey: API_KEY_FRONTEND },
       endpoint: videonft.api.prodApiEndpoint,
@@ -151,11 +153,82 @@ export const Main: React.FC = () => {
       description: "My NFT description",
       traits: { "my-custom-trait": "my-custom-value" },
     };
+    console.log("uploading to ipfs...");
     const ipfs = await minter.api.exportToIPFS(asset.id, nftMetadata);
+    console.log(ipfs);
+    console.log("minting nft...");
     const tx = await minter.web3.mintNft(ipfs.nftMetadataUrl);
+    console.log(tx);
+    console.log("waiting tx confirmation...");
+    await tx.wait();
+    console.log("tx confirmed");
     const nftInfo = await minter.web3.getMintedNftInfo(tx);
     console.log(
       `minted NFT on contract ${nftInfo.contractAddress} with ID ${nftInfo.tokenId}`
+    );
+
+    console.log("--- zora v3 process ---");
+    console.log("create order...");
+    const askModuleContract = AsksV1_1__factory.connect(
+      mumbaiZoraAddresses.AsksV1_1,
+      signer
+    );
+    const contractAddress = nftInfo.contractAddress;
+    const tokenId = ethers.BigNumber.from(nftInfo.tokenId);
+    const askPrice = ethers.utils.parseEther("0.001"); // 100 ETH Sale Price
+    const ownerAddress = await signer.getAddress(); // Owner of the assets
+    const findersFeeBps = "500"; // 2% Finders Fee (in BPS)
+
+    const erc721Contract = IERC721__factory.connect(contractAddress, signer);
+    const erc721TransferHelperAddress =
+      mumbaiZoraAddresses.ERC721TransferHelper;
+
+    console.log("check isTransferHelperApproved...");
+    const isTransferHelperApproved = await erc721Contract.isApprovedForAll(
+      ownerAddress, // NFT owner address
+      erc721TransferHelperAddress // V3 Module Transfer Helper to approve
+    );
+
+    console.log("isTransferHelperApproved", isTransferHelperApproved);
+    if (!isTransferHelperApproved) {
+      const approveTransferHelper = await erc721Contract.setApprovalForAll(
+        erc721TransferHelperAddress,
+        true
+      );
+      await approveTransferHelper.wait();
+    }
+
+    const moduleManagerContract = ZoraModuleManager__factory.connect(
+      mumbaiZoraAddresses.ZoraModuleManager,
+      signer
+    );
+
+    console.log("check isModuleManagerApproved...");
+    const isModuleManagerApproved =
+      await moduleManagerContract.isModuleApproved(
+        ownerAddress,
+        mumbaiZoraAddresses.AsksV1_1
+      );
+
+    console.log("isModuleManagerApproved", isModuleManagerApproved);
+
+    if (!isModuleManagerApproved) {
+      const approveisModuleManager =
+        await moduleManagerContract.setApprovalForModule(
+          mumbaiZoraAddresses.AsksV1_1,
+          true
+        );
+      await approveisModuleManager.wait();
+    }
+
+    console.log("create ask...");
+    await askModuleContract.createAsk(
+      contractAddress,
+      tokenId,
+      askPrice,
+      "0x0000000000000000000000000000000000000000", // 0 address for ETH sale
+      ownerAddress,
+      findersFeeBps
     );
   };
 
