@@ -14,6 +14,7 @@
     "@chakra-ui/react": "^2.2.6",
     "@emotion/react": "^11",
     "@emotion/styled": "^11",
+    "@livepeer/video-nft": "^0.3.6",
     "@livepeer/webrtmp-sdk": "^0.2.3",
     "@mui/material": "^5.9.3",
     "axios": "^0.27.2",

@@ -8,23 +8,21 @@ import {
   Button,
   FormControl,
   FormLabel,
-  IconButton,
   Input,
-  Modal,
-  ModalContent,
-  ModalOverlay,
   Stack,
   useColorModeValue,
   useDisclosure,
 } from "@chakra-ui/react";
+import { videonft } from "@livepeer/video-nft";
 import { Client, isSupported } from "@livepeer/webrtmp-sdk";
 import axios from "axios";
 import React from "react";
 import videojs from "video.js";
+import { useSigner } from "wagmi";
 
+import { API_KEY_BACKEND, API_KEY_FRONTEND } from "../../lib/app/constants";
 import { Mode } from "../../types/livepeer";
 import { ConnectWalletWrapper } from "../ConnectWalletWrapper";
-import { icons } from "./data";
 
 //TODO: make component for livepeer
 export const Main: React.FC = () => {
@@ -32,28 +30,30 @@ export const Main: React.FC = () => {
   const [isStreamingIsActive, setIsStreamingIsActive] = React.useState(false);
   const [videoElement, setVideoElelent] = React.useState(null);
 
-  const { isOpen, onOpen, onClose } = useDisclosure();
-
   const [playbackId, setPlaybackId] = React.useState("");
-  const [apiKey, setAPIKey] = React.useState("");
+
+  const [assetIdList, setAssetIdList] = React.useState<string[]>([]);
+
+  const { data: signer } = useSigner();
+
+  const [session, setSesstion] = React.useState<any>();
 
   React.useEffect(() => {
     if (!videoElement || !isStreamingIsActive || !playbackId) {
       return;
     }
+
     const player = videojs(videoElement, {
       autoplay: true,
       controls: true,
       sources: [
         {
-          src: `https://cdn.livepeer.com/hls/${playbackId}/index.m3u8`,
+          src: `https://livepeercdn.com/hls/${playbackId}/index.m3u8`,
         },
       ],
     });
-    // TODO: enable it
-    // player.hlsQualitySelector();
     player.on("error", () => {
-      player.src(`https://cdn.livepeer.com/hls/${playbackId}/index.m3u8`);
+      player.src(`https://livepeercdn.com/hls/${playbackId}/index.m3u8`);
     });
   }, [videoElement, isStreamingIsActive, playbackId]);
 
@@ -62,23 +62,21 @@ export const Main: React.FC = () => {
     setVideoElelent(element);
   }, []);
 
-  const handleAPIKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setAPIKey(e.target.value);
-  };
-
-  const openStreamingModal = () => {
-    setIsStreamingIsActive(true);
-    onOpen();
-  };
-
-  const closeStreamingModal = () => {
+  const closeStreaming = () => {
+    if (!session) {
+      return;
+    }
+    session.close();
     setIsStreamingIsActive(false);
-    onClose();
   };
 
   const startStreaming = async () => {
     if (!isSupported()) {
       alert("webrtmp-sdk is not currently supported on this browser");
+    }
+
+    if (!signer) {
+      return;
     }
 
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -92,7 +90,7 @@ export const Main: React.FC = () => {
       {
         headers: {
           "content-type": "application/json",
-          authorization: `Bearer ${apiKey}`,
+          authorization: `Bearer ${API_KEY_BACKEND}`,
         },
       }
     );
@@ -102,13 +100,13 @@ export const Main: React.FC = () => {
 
     const client = new Client();
     const session = client.cast(stream, streamKey);
-
+    setSesstion(session);
     session.on("open", () => {
-      openStreamingModal();
+      setIsStreamingIsActive(true);
       console.log("Stream started.");
     });
     session.on("close", () => {
-      closeStreamingModal();
+      closeStreaming();
       console.log("Stream stopped.");
     });
     session.on("error", (err) => {
@@ -117,15 +115,60 @@ export const Main: React.FC = () => {
     console.log("start streaming");
   };
 
+  const getAssets = async () => {
+    const assetsResponse = await axios.get("api/asset", {
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${API_KEY_BACKEND}`,
+      },
+    });
+
+    const assetIdList = Object.values(assetsResponse.data).map((asset: any) => {
+      return asset.id as string;
+    });
+    setAssetIdList(assetIdList);
+  };
+
+  const mintNFT = async (assetId: string) => {
+    const assetResponse = await axios.get(`api/asset/${assetId}`, {
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${API_KEY_BACKEND}`,
+      },
+    });
+
+    const apiOpts = {
+      auth: { apiKey: API_KEY_FRONTEND },
+      endpoint: videonft.api.prodApiEndpoint,
+    };
+    const minter = new videonft.minter.FullMinter(apiOpts, {
+      // TODO: better to use wagmi provider
+      ethereum: window.ethereum as any,
+      chainId: 80001,
+    });
+    const asset = await minter.api.nftNormalize(assetResponse.data);
+    const nftMetadata = {
+      description: "My NFT description",
+      traits: { "my-custom-trait": "my-custom-value" },
+    };
+    const ipfs = await minter.api.exportToIPFS(asset.id, nftMetadata);
+    const tx = await minter.web3.mintNft(ipfs.nftMetadataUrl);
+    const nftInfo = await minter.web3.getMintedNftInfo(tx);
+    console.log(
+      `minted NFT on contract ${nftInfo.contractAddress} with ID ${nftInfo.tokenId}`
+    );
+  };
+
   return (
     <Box
       boxShadow={useColorModeValue("md", "md-dark")}
       borderRadius="2xl"
-      p="8"
+      px="4"
+      py="8"
     >
       <Box>
         {mode === "select" && (
-          <Stack>
+          <Stack spacing="4">
             <Button
               w="full"
               onClick={() => {
@@ -133,6 +176,14 @@ export const Main: React.FC = () => {
               }}
             >
               Create Streaming
+            </Button>
+            <Button
+              w="full"
+              onClick={() => {
+                setMode("manage");
+              }}
+            >
+              Manage Streaming
             </Button>
             <Button
               w="full"
@@ -145,20 +196,12 @@ export const Main: React.FC = () => {
           </Stack>
         )}
         {mode == "create" && (
-          <Stack>
+          <Stack spacing="4">
             <ConnectWalletWrapper>
-              <Stack>
-                {!isStreamingIsActive && (
-                  <FormControl>
-                    <FormLabel>Livepeer API Key</FormLabel>
-                    <Input type="text" onChange={handleAPIKeyChange} />
-                  </FormControl>
-                )}
-
+              <Stack spacing="4">
                 {isStreamingIsActive && (
-                  <Modal onClose={closeStreamingModal} isOpen={isOpen}>
-                    <ModalOverlay />
-                    <ModalContent position="relative">
+                  <>
+                    <Box>
                       <div data-vjs-player>
                         <video
                           id="video"
@@ -168,31 +211,42 @@ export const Main: React.FC = () => {
                           playsInline
                         />
                       </div>
-                      <Box position="absolute" right="2" top="2">
-                        {icons.map((icon) => (
-                          <IconButton
-                            size="xs"
-                            key={icon.key}
-                            as="a"
-                            href={icon.href}
-                            target="_blank"
-                            aria-label={icon.key}
-                            icon={icon.icon}
-                          />
-                        ))}
-                      </Box>
-                    </ModalContent>
-                  </Modal>
+                    </Box>
+                    <Button w="full" onClick={closeStreaming}>
+                      End
+                    </Button>
+                  </>
                 )}
-                <Button w="full" onClick={startStreaming}>
-                  Start
-                </Button>
+
+                {!isStreamingIsActive && (
+                  <Button w="full" onClick={startStreaming}>
+                    Start
+                  </Button>
+                )}
               </Stack>
             </ConnectWalletWrapper>
           </Stack>
         )}
+        {mode == "manage" && (
+          <Stack spacing="4">
+            <Button w="full" onClick={getAssets}>
+              Get Assets
+            </Button>
+            {assetIdList.map((assetId) => {
+              return (
+                <Button
+                  fontSize={"xs"}
+                  key={assetId}
+                  onClick={() => mintNFT(assetId)}
+                >
+                  {assetId}
+                </Button>
+              );
+            })}
+          </Stack>
+        )}
         {mode == "view" && (
-          <Stack>
+          <Stack spacing="4">
             <Button w="full">View</Button>
           </Stack>
         )}

@@ -11,6 +11,10 @@ Arctic Live
 - Livepeer
 - NFTStorage is possible
 
+## Disclaimer
+
+- Now we are exposing API key because mint NFT requires cors enabled API key, I'll disable this soon.
+
 ## Principle
 
 - make it stupid simple

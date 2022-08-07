@@ -13,22 +13,12 @@ const hander = async (req: NextApiRequest, res: NextApiResponse) => {
   if (req.method === "POST") {
     const authorization = req.headers["authorization"] || "";
     const name = v4();
-    //TODO: have more options in quality, currently only supports one for simple code
-    const profiles = [
-      {
-        name: "720p",
-        bitrate: 2000000,
-        fps: 30,
-        width: 1280,
-        height: 720,
-      },
-    ];
     try {
       const createStreamResponse = await axios.post(
         "https://livepeer.com/api/stream",
         {
           name,
-          profiles,
+          record: true,
         },
         {
           headers: {
