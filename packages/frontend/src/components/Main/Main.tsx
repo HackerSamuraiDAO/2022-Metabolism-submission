@@ -63,10 +63,11 @@ export const Main: React.FC = () => {
           src: `https://livepeercdn.com/hls/${playbackId}/index.m3u8`,
         },
       ],
-    });
+    }) as any;
     player.on("error", () => {
       player.src(`https://livepeercdn.com/hls/${playbackId}/index.m3u8`);
     });
+    player.hlsQualitySelector();
     setPlayer(player);
   }, [videoElement, isStreamingIsActive, playbackId]);
 
