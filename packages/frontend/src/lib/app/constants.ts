@@ -1,2 +1,3 @@
-export const SERVICE_NAME = "SERVICE_NAME";
-export const GITHUB_URI = "https://github.com/HackerSamuraiDAO/template";
+export const SERVICE_NAME = "Arctic Live";
+export const GITHUB_URI =
+  "https://github.com/HackerSamuraiDAO/2022-Metabolism-submission";

@@ -1,4 +1,15 @@
-# Hackathon Template
+# 2022-Metabolism-submission
+
+## Service Name
+
+Arctic Live
+
+## Used Protocols
+
+- Zora V3
+- Polygon
+- Livepeer
+- NFTStorage is possible
 
 ## Principle
 
@@ -19,7 +30,3 @@
 cd packages/frontend
 yarn dev
 ```
-
-## Contribution
-
-- Contribution is always welcome! Please add/update package!
