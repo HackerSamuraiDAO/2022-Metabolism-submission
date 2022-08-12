@@ -8,6 +8,10 @@
 
 Arctic Live
 
+## Prize
+
+We got 2nd prize from Livepeer
+
 ## Overview
 
 This is a video live streaming platform using Livepeer, and live streaming data is converted to NFT with IPFS, then it can be directly sold in the Zora V3 marketplace.
